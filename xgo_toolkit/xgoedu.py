@@ -5,8 +5,9 @@ import cv2
 import numpy as np
 import math
 import os,sys,time,json,base64
+from pathlib import Path
 import spidev as SPI
-import xgoscreen.LCD_2inch as LCD_2inch
+from . import LCD_2inch
 import RPi.GPIO as GPIO
 from PIL import Image,ImageDraw,ImageFont
 import json
@@ -97,17 +98,48 @@ def color(value):
     a3 = digit.index(value[5]) * 16 + digit.index(value[6])
     return (a3, a2, a1)
 
+def prepare_files():
+    base_path = Path.home() / ".cache/xgo-toolkit/model"
+    if not base_path.exists():
+        print("downloading models from github")
+        base_path.mkdir(parents=True)
+        # Download the model
+        files = [
+            'age_deploy.prototxt',
+            'age_net.caffemodel',
+            'EmotionDetectionModel.h5',
+            'gender_deploy.prototxt',
+            'gender_net.caffemodel',
+            'haarcascade_frontalface_default.xml',
+            'Model.onnx',
+            'msyh.ttc',
+            'object_detection_ssd_mobilenetv2_oidv4_fp16.tflite',
+            'opencv_face_detector.pbtxt'
+            'opencv_face_detector_uint8.pb',
+            'pose_landmark_heavy.tflite',
+        ]
 
+        for filename in files:
+            command = ("curl --output ~/.cache/xgo-toolkit/model/%s -L https://github.com/jozolab/xgo-toolkit/raw/refs/heads/master/model/%s >/dev/null 2>&1"
+                       % (filename, filename,))
+            os.system(command)
+
+def model_path(filename):
+    file_path = Path.home() / ".cache/xgo-toolkit/model" / filename
+    return str(file_path)
 
 class XGOEDU():
     def __init__(self):
+        # download model files from GitHub
+        prepare_files()
+
         self.display = LCD_2inch.LCD_2inch()
         self.display.Init()
         self.display.clear()
         self.splash = Image.new("RGB",(320,240),"black")
         self.display.ShowImage(self.splash)
         self.draw = ImageDraw.Draw(self.splash)
-        self.font = ImageFont.truetype("/home/pi/model/msyh.ttc",15)
+        self.font = ImageFont.truetype(model_path("msyh.ttc"), 15)
         self.key1=17
         self.key2=22
         self.key3=23
@@ -218,8 +250,7 @@ class XGOEDU():
     图片的大小为320*240,jpg格式
     '''
     def lcd_picture(self,filename,x=0,y=0):
-        path="/home/pi/xgoPictures/"
-        image = Image.open(path+filename)
+        image = Image.open(filename)
         self.splash.paste(image,(x,y))
         self.display.ShowImage(self.splash)
     #显示文字
@@ -228,7 +259,7 @@ class XGOEDU():
     '''
     def lcd_text(self,x,y,content,color="WHITE",fontsize=15):
         if fontsize!=15:
-            self.font = ImageFont.truetype("/home/pi/model/msyh.ttc",fontsize)
+            self.font = ImageFont.truetype(model_path("msyh.ttc"), fontsize)
         self.draw.text((x,y),content,fill=color,font=self.font)
         self.display.ShowImage(self.splash)
     #流式显示所有文字
@@ -344,22 +375,19 @@ class XGOEDU():
     filename 文件名 字符串
     '''
     def xgoSpeaker(self,filename):
-        path="/home/pi/xgoMusic/"
-        os.system("mplayer"+" "+path+filename)
+        os.system("mplayer"+" "+filename)
 
     def xgoVideoAudio(self,filename):
-        path="/home/pi/xgoVideos/"
         time.sleep(0.2)  #音画速度同步了 但是时间轴可能不同步 这里调试一下
-        cmd="sudo mplayer "+path+filename+" -novideo"
+        cmd="sudo mplayer "+filename+" -novideo"
         os.system(cmd)
 
     def xgoVideo(self,filename):
-        path="/home/pi/xgoVideos/"
         x=threading.Thread(target=self.xgoVideoAudio,args=(filename,))
         x.start()
         global counter
-        video=cv2.VideoCapture(path+filename)
-        print(path+filename)
+        video=cv2.VideoCapture(filename)
+        print(filename)
         fps = video.get(cv2.CAP_PROP_FPS) 
         print(fps)
         init_time=time.time()
@@ -393,10 +421,9 @@ class XGOEDU():
     seconds 录制时间S 字符串
     '''
     def xgoAudioRecord(self,filename="record",seconds=5):
-        path="/home/pi/xgoMusic/"
         command1 = "sudo arecord -d"
         command2 = "-f S32_LE -r 8000 -c 1 -t wav"
-        cmd=command1+" "+str(seconds)+" "+command2+" "+path+filename+".wav"
+        cmd=command1+" "+str(seconds)+" "+command2+" "+filename+".wav"
         print(cmd)
         os.system(cmd)
 
@@ -426,7 +453,6 @@ class XGOEDU():
                 break
 
     def xgoVideoRecord(self,filename="record",seconds=5):
-        path="/home/pi/xgoVideos/"
         self.camera_still=False
         time.sleep(0.6)
         self.open_camera()
@@ -434,7 +460,7 @@ class XGOEDU():
         fourcc = cv2.VideoWriter_fourcc(*'mp4v')
         width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
         height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-        videoWrite = cv2.VideoWriter(path+filename+'.mp4', fourcc, FPS, (width,height))
+        videoWrite = cv2.VideoWriter(filename+'.mp4', fourcc, FPS, (width,height))
         starttime=time.time()
         while 1:
             print('recording...')
@@ -454,12 +480,11 @@ class XGOEDU():
         videoWrite.release()
 
     def xgoTakePhoto(self,filename="photo"):
-        path="/home/pi/xgoPictures/"
         self.camera_still=False
         time.sleep(0.6)
         self.open_camera()
         success,image = self.cap.read()
-        cv2.imwrite(path+filename+'.jpg',image)
+        cv2.imwrite(filename+'.jpg',image)
         if not success:
             print("Ignoring empty camera frame")
         b,g,r = cv2.split(image)
@@ -476,7 +501,7 @@ class XGOEDU():
     开启摄像头  A键拍照 B键录像 C键退出
     '''
     def camera(self,filename="camera"):
-        font = ImageFont.truetype("/home/pi/model/msyh.ttc",20)
+        font = ImageFont.truetype(model_path("msyh.ttc"), 20)
         self.open_camera()
         while True:
             success,image = self.cap.read()
@@ -662,7 +687,7 @@ class XGOEDU():
         ret=''
         self.open_camera()
         if self.yolo==None:
-            self.yolo = yoloXgo('/home/pi/model/Model.onnx',
+            self.yolo = yoloXgo(model_path('Model.onnx'),
             ['person','bicycle','car','motorbike','aeroplane','bus','train','truck','boat','traffic light','fire hydrant','stop sign','parking meter','bench','bird','cat','dog','horse','sheep','cow','elephant','bear','zebra','giraffe','backpack','umbrella','handbag','tie','suitcase','frisbee','skis','snowboard','sports ball','kite','baseball bat','baseball glove','skateboard','surfboard','tennis racket','bottle','wine glass','cup','fork','knife','spoon','bowl','banana','apple','sandwich','orange','broccoli','carrot','hot dog','pizza','donut','cake','chair','sofa','pottedplant','bed','diningtable','toilet','tvmonitor','laptop','mouse','remote','keyboard','cell phone','microwave','oven','toaster','sink','refrigerator','book','clock','vase','scissors','teddy bear','hair drier','toothbrush'],
             [352,352],0.66)
         if target=="camera":
@@ -737,8 +762,8 @@ class XGOEDU():
         ret=''
         if self.classifier==None:
             from keras.models import load_model
-            self.face_classifier=cv2.CascadeClassifier('/home/pi/model/haarcascade_frontalface_default.xml')
-            self.classifier = load_model('/home/pi/model/EmotionDetectionModel.h5')
+            self.face_classifier=cv2.CascadeClassifier(model_path('haarcascade_frontalface_default.xml'))
+            self.classifier = load_model(model_path('EmotionDetectionModel.h5'))
         class_labels=['Angry','Happy','Neutral','Sad','Surprise']
         if target=="camera":
             self.open_camera()
@@ -793,12 +818,12 @@ class XGOEDU():
         else:
             image=np.array(Image.open(target))
         if self.agesexmark==None:
-            faceProto = "/home/pi/model/opencv_face_detector.pbtxt"
-            faceModel = "/home/pi/model/opencv_face_detector_uint8.pb"
-            ageProto = "/home/pi/model/age_deploy.prototxt"
-            ageModel = "/home/pi/model/age_net.caffemodel"
-            genderProto = "/home/pi/model/gender_deploy.prototxt"
-            genderModel = "/home/pi/model/gender_net.caffemodel"
+            faceProto = model_path("opencv_face_detector.pbtxt")
+            faceModel = model_path("opencv_face_detector_uint8.pb")
+            ageProto = model_path("age_deploy.prototxt")
+            ageModel = model_path("age_net.caffemodel")
+            genderProto = model_path("gender_deploy.prototxt")
+            genderModel = model_path("gender_net.caffemodel")
             self.ageNet = cv2.dnn.readNet(ageModel, ageProto)
             self.genderNet = cv2.dnn.readNet(genderModel, genderProto)
             self.faceNet = cv2.dnn.readNet(faceModel, faceProto)
@@ -861,8 +886,7 @@ class XGOEDU():
         token = self.fetch_token()
 
         speech_data = []
-        path="/home/pi/xgoMusic/"
-        with open(path+AUDIO_FILE, 'rb') as speech_file:
+        with open(AUDIO_FILE, 'rb') as speech_file:
             speech_data = speech_file.read()
 
         length = len(speech_data)
@@ -941,9 +965,8 @@ class XGOEDU():
             result_str = err.read()
             has_error = True
 
-        path="/home/pi/xgoMusic/"
         save_file = "error.txt" if has_error else 'result.' + FORMAT
-        with open(path+save_file, 'wb') as of:
+        with open(save_file, 'wb') as of:
             of.write(result_str)
 
         if has_error:
@@ -959,7 +982,7 @@ class XGOEDU():
             img = Image.fromarray(cv2.cvtColor(img, cv2.COLOR_BGR2RGB))
         draw = ImageDraw.Draw(img)
         fontStyle = ImageFont.truetype(
-            "/home/pi/model/msyh.ttc", textSize, encoding="utf-8")
+            model_path("msyh.ttc"), textSize, encoding="utf-8")
         draw.text(position, text, textColor, font=fontStyle)
         return cv2.cvtColor(np.asarray(img), cv2.COLOR_RGB2BGR)
     
@@ -969,8 +992,7 @@ class XGOEDU():
             self.open_camera()
             success,img = self.cap.read()
         else:
-            path="/home/pi/xgoPictures/"
-            img=np.array(Image.open(path+target))
+            img=np.array(Image.open(target))
      
         barcodes = pyzbar.decode(img) 
         result=[]
@@ -1011,8 +1033,7 @@ class XGOEDU():
             self.open_camera()
             success,frame = self.cap.read()
         else:
-            path="/home/pi/xgoPictures/"
-            frame=np.array(Image.open(path+target))
+            frame=np.array(Image.open(target))
         frame_ = cv2.GaussianBlur(frame,(5,5),0)                    
         hsv = cv2.cvtColor(frame,cv2.COLOR_BGR2HSV)
         mask = cv2.inRange(hsv,color_lower,color_upper)  
@@ -1083,8 +1104,7 @@ class XGOEDU():
             self.open_camera()
             success,image = self.cap.read()
         else:
-            path="/home/pi/xgoPictures/"
-            image=np.array(Image.open(path+target))
+            image=np.array(Image.open(target))
 
         frame_mask=self.filter_img(image, color_mask)
         

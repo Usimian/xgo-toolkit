@@ -1,6 +1,6 @@
 
 import time
-import xgoscreen.lcdconfig as lcdconfig
+from . import lcdconfig
 
 class LCD_2inch(lcdconfig.RaspberryPi):
 
