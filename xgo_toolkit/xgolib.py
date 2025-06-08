@@ -175,8 +175,8 @@ class XGO():
     def __init__(self, port, baud=115200, version="xgomini", verbose=False):
         self.verbose = verbose
         self.ser = serial.Serial("/dev/ttyAMA0", baud, timeout=0.5)
-        self.ser.flushOutput()
-        self.ser.flushInput()
+        self.ser.reset_output_buffer()
+        self.ser.reset_input_buffer()
         self.port = port
         self.rx_FLAG = 0
         self.rx_COUNT = 0
@@ -218,12 +218,12 @@ class XGO():
             print("tx_data: ", tx)
 
     def __read(self, addr, read_len=1):
-        self.ser.flushInput()
+        self.ser.reset_input_buffer()
         mode = 0x02
         sum_data = (0x09 + mode + addr + read_len) % 256
         sum_data = 255 - sum_data
         tx = [0x55, 0x00, 0x09, mode, addr, read_len, sum_data, 0x00, 0xAA]
-        self.ser.flushInput()
+        self.ser.reset_input_buffer()
         self.ser.write(tx)
         if self.verbose:
             print("tx_data: ", tx)
@@ -378,7 +378,7 @@ class XGO():
         XGOorder["ACTION"][1] = action_id
         self.__send("ACTION")
         if wait:
-            st = ActionTime.get(action_id)
+            st = XGOparam["ActionTime"].get(action_id)
             if st:
                 time.sleep(st)
 
@@ -665,7 +665,7 @@ class XGO():
         t = time.time()
         rx_msg = []
         while time.time() - t < timeout:
-            n = self.ser.inWaiting()
+            n = self.ser.in_waiting
             rx_CHECK = 0
             if n:
                 data = self.ser.read(n)
